@@ -1,0 +1,94 @@
+pragma solidity ^0.8.0;
+interface IERC20 {
+    function transfer(address recipient, uint256 amount) external returns (bool);
+    function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
+    function balanceOf(address account) external view returns (uint256);
+}
+
+contract CMAXStaking {
+    IERC20 public stakingToken;
+    address public owner;
+
+    struct Staker {
+        uint256 stakedAmount;
+        uint256 stakeTime;
+        uint256 lastClaimTime;
+    }
+
+    mapping(address => Staker) public stakers;
+    uint256 public totalStaked;
+
+    event Staked(address indexed user, uint256 amount, uint256 time);
+    event Unstaked(address indexed user, uint256 amount, uint256 time);
+    event RewardPaid(address indexed user, uint256 reward);
+
+    constructor(address _stakingTokenAddress) {
+        stakingToken = IERC20(_stakingTokenAddress);
+        owner = msg.sender;
+    }
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Not owner");
+        _;
+    }
+
+    function stakeTokens(uint256 amount) external {
+        require(amount > 0, "Amount must be greater than 0");
+        stakers[msg.sender].stakedAmount += amount;
+        stakers[msg.sender].stakeTime = block.timestamp;
+        stakers[msg.sender].lastClaimTime = block.timestamp;
+
+        stakingToken.transferFrom(msg.sender, address(this), amount);
+        emit Staked(msg.sender, amount, block.timestamp);
+    }
+
+    function unstakeTokens() external {
+        uint256 stakedAmount = stakers[msg.sender].stakedAmount;
+        require(stakedAmount > 0, "No staked balance");
+
+        // Calculate and pay out rewards
+        uint256 reward = calculateReward(msg.sender);
+        if (reward > 0) {
+            stakingToken.transfer(msg.sender, reward);
+            emit RewardPaid(msg.sender, reward);
+        }
+
+        stakingToken.transfer(msg.sender, stakedAmount);
+        emit Unstaked(msg.sender, stakedAmount, block.timestamp);
+
+        stakers[msg.sender].stakedAmount = 0;
+    }
+
+    function calculateReward(address stakerAddress) public view returns (uint256) {
+        Staker memory staker = stakers[stakerAddress];
+        uint256 stakingDuration = block.timestamp - staker.lastClaimTime;
+        uint256 feePercentage = getFeePercentage(staker.stakeTime);
+        uint256 reward = (staker.stakedAmount * feePercentage / 100) * stakingDuration / 365 days;
+        return reward;
+    }
+
+    function getFeePercentage(uint256 stakeTime) internal view returns (uint256) {
+        uint256 duration = block.timestamp - stakeTime;
+        if (duration <= 180 days) {
+            return 10;
+        } else if (duration <= 360 days) {
+            return 5;
+        } else if (duration <= 540 days) {
+            return 2.5;
+        } else {
+            return 1.25;
+        }
+    }
+
+    // Governance and DAO participation
+    function voteOnProposal(uint256 proposalId, bool support) external {
+        require(stakers[msg.sender].stakedAmount > 0, "Must be a staker to vote");
+        // Logic to record the vote on a proposal
+        // This is a simplified example. Actual implementation would involve more details on handling proposals and voting mechanism.
+    }
+
+    // Owner-only function to adjust parameters or add new functionalities
+    function adjustParameters(...) external onlyOwner {
+        // Adjust contract parameters or add functionalities
+    }
+}
